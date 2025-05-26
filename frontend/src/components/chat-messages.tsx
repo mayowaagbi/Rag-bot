@@ -1,4 +1,3 @@
-// Define Message type locally if not available from a package
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system" | string;
