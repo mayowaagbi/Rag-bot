@@ -55,19 +55,6 @@ export function ChatInput({
         />
         <div className="absolute bottom-2 right-2 flex space-x-2">
           <label htmlFor="file-upload">
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className={cn(
-                "h-8 w-8 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100",
-                (isLoading || isUploading || isIndexing) && "opacity-50"
-              )}
-              disabled={isLoading || isUploading || isIndexing}
-            >
-              <PaperclipIcon className="h-4 w-4" />
-              <span className="sr-only">Attach files</span>
-            </Button>
             <input
               id="file-upload"
               type="file"

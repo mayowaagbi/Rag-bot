@@ -16,9 +16,6 @@ const App: React.FC = () => {
   return (
     <ThemeProvider>
       <div className="flex min-h-screen flex-col">
-        {/* <header className="flex justify-end p-4">
-          <ThemeToggle />
-        </header> */}
         <main className="flex-1">
           <ChatInterface />
         </main>

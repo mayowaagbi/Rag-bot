@@ -86,7 +86,6 @@ export function DocumentSidebar({
           </Button>
         )}
       </div>
-
       <div className="flex-1 overflow-auto">
         <div className="p-4">
           <Collapsible
@@ -226,6 +225,9 @@ export function DocumentSidebar({
           </Collapsible>
         </div>
       </div>
+      <footer className=" p-4 dark:text-white text-xs ml-0">
+        @2025 Agbi Olumayowa Olufemi
+      </footer>
     </div>
   );
 

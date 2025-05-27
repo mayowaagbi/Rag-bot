@@ -266,7 +266,7 @@ export function ChatInterface() {
               )}
             </Button>
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-              RAG-Bot
+              Mayovibe1's RAGBot
             </h1>
           </div>
           <div className="flex items-center gap-2">
