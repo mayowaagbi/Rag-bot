@@ -13,6 +13,7 @@ interface ChatInputProps {
   onFileUpload: (files: File[]) => void;
   isUploading: boolean;
   isIndexing: boolean;
+  disabled?: boolean;
 }
 
 export function ChatInput({
