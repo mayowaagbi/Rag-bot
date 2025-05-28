@@ -42,6 +42,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
+        "https://mayowas-rag-bot.vercel.app",
     ],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
