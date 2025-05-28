@@ -15,7 +15,7 @@ export function FileUploader({
   isUploading,
   isIndexing,
 }: FileUploaderProps) {
-  const [dragActive, setDragActive] = useState(false);
+  // const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   const onDrop = useCallback(

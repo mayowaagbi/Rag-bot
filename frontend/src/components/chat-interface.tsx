@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, PanelLeftClose, PanelLeftOpen, Upload } from "lucide-react";
+import { Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { Document } from "@/types/document";
 import { useMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -39,7 +39,8 @@ export function ChatInterface() {
   }, [messages, streamingMessage]);
 
   // Add this at the top of your ChatInterface component
-  const API_BASE_URL = "http://localhost:8000";
+  const API_BASE_URL =
+    import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
   // Update your handleFileUpload function
   const handleFileUpload = async (files: File[]) => {

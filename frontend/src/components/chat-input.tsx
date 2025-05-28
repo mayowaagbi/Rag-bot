@@ -2,8 +2,8 @@ import type React from "react";
 import type { FormEvent, ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { PaperclipIcon, SendIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { SendIcon } from "lucide-react";
+// import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
   input: string;
