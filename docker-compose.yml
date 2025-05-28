@@ -1,0 +1,25 @@
+services:
+  frontend:
+    build: ./frontend
+    image: rag-bot-frontend # Explicit lowercase image name
+    ports:
+      - "3000:80"
+    depends_on:
+      - bot # Changed to lowercase to match service name
+    restart: unless-stopped # Added for auto-recovery
+
+  bot: # Changed to lowercase
+    build: ./bot # Directory name should match (lowercase)
+    image: rag-bot-backend # Explicit image name
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./bot/uploads:/app/uploads # Consistent lowercase
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck: # Added health check
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
