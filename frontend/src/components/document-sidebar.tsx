@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
   ChevronDown,
   ChevronRight,
@@ -235,6 +235,12 @@ export function DocumentSidebar({
     return (
       <Sheet open={isOpen} onOpenChange={onClose}>
         <SheetContent side="left" className="w-[300px] p-0">
+          <SheetTitle className="sr-only">
+            Document Library
+          </SheetTitle>
+          <SheetDescription className="sr-only">
+            Manage and view uploaded documents in your library
+          </SheetDescription>
           {sidebarContent}
         </SheetContent>
       </Sheet>
