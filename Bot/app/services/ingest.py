@@ -2,6 +2,7 @@
 import os
 import re
 import pickle
+import gzip
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -10,6 +11,8 @@ import faiss
 from sentence_transformers import SentenceTransformer
 from PyPDF2 import PdfReader
 from docx import Document
+from app.utils.memory_monitor import monitor_memory, force_garbage_collection
+import gc  # For garbage collection
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -20,13 +23,17 @@ class DocumentIngestor:
 
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",
-        chunks_path: str = "data/chunks.pkl",
+        model_name: str = "paraphrase-MiniLM-L3-v2",  # Smaller, faster model
+        chunks_path: str = "data/chunks.pkl.gz",  # Compressed storage
         index_path: str = "data/faiss.index",
+        max_chunks: int = 1000,  # Limit total chunks in memory
+        enable_compression: bool = True,
     ):
         self.model_name = model_name
         self.chunks_path = Path(chunks_path)
         self.index_path = Path(index_path)
+        self.max_chunks = max_chunks
+        self.enable_compression = enable_compression
         self._model = None
 
         # Ensure data directory exists
@@ -39,6 +46,14 @@ class DocumentIngestor:
             logger.info(f"Loading SentenceTransformer model: {self.model_name}")
             self._model = SentenceTransformer(self.model_name)
         return self._model
+
+    def unload_model(self):
+        """Unload model to free memory when not needed."""
+        if self._model is not None:
+            del self._model
+            self._model = None
+            gc.collect()
+            logger.info("Model unloaded to save memory")
 
     def load_document(self, filepath: str) -> str:
         """
@@ -127,14 +142,14 @@ class DocumentIngestor:
         return text.strip()
 
     def chunk_text(
-        self, text: str, max_tokens: int = 200, overlap: int = 20
+        self, text: str, max_tokens: int = 400, overlap: int = 50  # Increased chunk size, reduced overlap
     ) -> List[str]:
         """
-        Split text into overlapping chunks.
+        Split text into overlapping chunks with optimized parameters for deployment.
 
         Args:
             text: Text to chunk
-            max_tokens: Maximum tokens per chunk
+            max_tokens: Maximum tokens per chunk (increased for fewer chunks)
             overlap: Number of overlapping tokens between chunks
 
         Returns:
@@ -162,13 +177,19 @@ class DocumentIngestor:
             if start >= len(words):
                 break
 
+        # Limit total number of chunks for memory efficiency
+        if len(chunks) > self.max_chunks:
+            logger.warning(f"Too many chunks ({len(chunks)}), keeping first {self.max_chunks}")
+            chunks = chunks[:self.max_chunks]
+
         return chunks
 
+    @monitor_memory
     def build_faiss_index(
         self, chunks: List[str]
     ) -> Tuple[faiss.IndexFlatL2, np.ndarray]:
         """
-        Build FAISS index from text chunks.
+        Build FAISS index from text chunks with memory optimization.
 
         Args:
             chunks: List of text chunks
@@ -180,25 +201,49 @@ class DocumentIngestor:
             raise ValueError("No chunks provided for index building")
 
         logger.info(f"Encoding {len(chunks)} chunks...")
-        embeddings = self.model.encode(chunks, show_progress_bar=True)
+        
+        # Process in smaller batches to reduce memory usage
+        batch_size = 50
+        all_embeddings = []
+        
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            batch_embeddings = self.model.encode(batch, show_progress_bar=False)
+            all_embeddings.append(batch_embeddings)
+            
+            # Clear some memory
+            del batch_embeddings
+            gc.collect()
 
+        embeddings = np.vstack(all_embeddings)
+        
         # Create FAISS index
         dim = embeddings.shape[1]
         index = faiss.IndexFlatL2(dim)
         index.add(embeddings.astype(np.float32))
 
         logger.info(f"Built FAISS index with {index.ntotal} vectors")
+        
+        # Clean up
+        del all_embeddings
+        gc.collect()
+        
         return index, embeddings
 
     def save_chunks(self, chunks: List[str]) -> bool:
-        """Save chunks to pickle file."""
+        """Save chunks to compressed pickle file."""
         try:
             # Ensure directory exists
             self.chunks_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(self.chunks_path, "wb") as f:
-                pickle.dump(chunks, f)
-            logger.info(f"Saved {len(chunks)} chunks to {self.chunks_path}")
+            if self.enable_compression and self.chunks_path.suffix == '.gz':
+                with gzip.open(self.chunks_path, "wb") as f:
+                    pickle.dump(chunks, f, protocol=pickle.HIGHEST_PROTOCOL)
+                logger.info(f"Saved {len(chunks)} chunks (compressed) to {self.chunks_path}")
+            else:
+                with open(self.chunks_path, "wb") as f:
+                    pickle.dump(chunks, f, protocol=pickle.HIGHEST_PROTOCOL)
+                logger.info(f"Saved {len(chunks)} chunks to {self.chunks_path}")
             return True
         except Exception as e:
             logger.error(f"Failed to save chunks: {str(e)}")
@@ -216,11 +261,12 @@ class DocumentIngestor:
             logger.error(f"Failed to save FAISS index: {str(e)}")
             return False
 
+    @monitor_memory
     def ingest_file(
-        self, filepath: str, max_tokens: int = 200, overlap: int = 20
+        self, filepath: str, max_tokens: int = 400, overlap: int = 50  # Updated defaults
     ) -> Tuple[int, bool]:
         """
-        Ingest a single file into the knowledge base.
+        Ingest a single file into the knowledge base with memory optimization.
 
         Args:
             filepath: Path to the file to ingest
@@ -252,16 +298,21 @@ class DocumentIngestor:
             existing_chunks = self._load_existing_chunks()
             existing_index = self._load_existing_index()
 
-            # Combine with new chunks
+            # Combine with new chunks but limit total
             all_chunks = existing_chunks + new_chunks
+            if len(all_chunks) > self.max_chunks:
+                logger.warning(f"Limiting chunks to {self.max_chunks} (was {len(all_chunks)})")
+                # Keep the most recent chunks
+                all_chunks = all_chunks[-self.max_chunks:]
 
             # Build/update index
-            if existing_index is not None and len(existing_chunks) > 0:
+            if existing_index is not None and len(existing_chunks) > 0 and len(all_chunks) <= self.max_chunks:
                 # Add new embeddings to existing index
                 logger.info("Updating existing index...")
-                new_embeddings = self.model.encode(new_chunks)
+                new_embeddings = self.model.encode(new_chunks, show_progress_bar=False)
                 existing_index.add(new_embeddings.astype(np.float32))
                 index = existing_index
+                del new_embeddings
             else:
                 # Build new index
                 logger.info("Building new index...")
@@ -270,6 +321,10 @@ class DocumentIngestor:
             # Save everything
             chunks_saved = self.save_chunks(all_chunks)
             index_saved = self.save_faiss_index(index)
+
+            # Unload model to save memory after processing
+            self.unload_model()
+            gc.collect()
 
             success = chunks_saved and index_saved
             if success:
@@ -287,10 +342,10 @@ class DocumentIngestor:
             return 0, False
 
     def ingest_directory(
-        self, directory_path: str, max_tokens: int = 200, overlap: int = 20
+        self, directory_path: str, max_tokens: int = 400, overlap: int = 50  # Updated defaults
     ) -> Tuple[int, int, bool]:
         """
-        Ingest all supported files from a directory.
+        Ingest all supported files from a directory with memory optimization.
 
         Args:
             directory_path: Path to directory containing documents
@@ -323,6 +378,12 @@ class DocumentIngestor:
 
                     logger.info(f"✅ {filepath.name} → {len(chunks)} chunks")
 
+                    # Check if we're approaching memory limits
+                    if len(all_chunks) > self.max_chunks:
+                        logger.warning(f"Reached chunk limit ({self.max_chunks}), stopping directory processing")
+                        all_chunks = all_chunks[:self.max_chunks]
+                        break
+
                 except Exception as e:
                     logger.error(f"⚠️ Error processing {filepath.name}: {str(e)}")
 
@@ -337,6 +398,10 @@ class DocumentIngestor:
 
             chunks_saved = self.save_chunks(all_chunks)
             index_saved = self.save_faiss_index(index)
+
+            # Unload model after processing
+            self.unload_model()
+            gc.collect()
 
             success = chunks_saved and index_saved
             if success:
@@ -354,8 +419,18 @@ class DocumentIngestor:
         """Load existing chunks if available."""
         if self.chunks_path.exists():
             try:
-                with open(self.chunks_path, "rb") as f:
-                    chunks = pickle.load(f)
+                if self.enable_compression and self.chunks_path.suffix == '.gz':
+                    with gzip.open(self.chunks_path, "rb") as f:
+                        chunks = pickle.load(f)
+                else:
+                    with open(self.chunks_path, "rb") as f:
+                        chunks = pickle.load(f)
+                
+                # Limit loaded chunks to prevent memory issues
+                if len(chunks) > self.max_chunks:
+                    logger.warning(f"Loading only last {self.max_chunks} chunks from {len(chunks)} total")
+                    chunks = chunks[-self.max_chunks:]
+                
                 logger.info(f"Loaded {len(chunks)} existing chunks")
                 return chunks
             except Exception as e:

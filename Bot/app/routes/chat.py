@@ -6,21 +6,22 @@ from pydantic import BaseModel, Field
 
 from app.services.query import QueryService
 from app.services.ingest import DocumentIngestor
+from config import OptimizationConfig
 import os
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Initialize services (consider using dependency injection in production)
-query_service = QueryService()
-ingest_service = DocumentIngestor()
+# Initialize services with optimized configuration
+query_service = QueryService(**OptimizationConfig.get_query_config())
+ingest_service = DocumentIngestor(**OptimizationConfig.get_ingestor_config())
 
 router = APIRouter(prefix="/api/v1", tags=["knowledge-base"])
 
 # Pydantic models for request/response validation
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000, description="The question to ask")
-    top_k: int = Field(default=5, ge=1, le=20, description="Number of relevant chunks to retrieve")
+    top_k: int = Field(default=OptimizationConfig.TOP_K_RESULTS, ge=1, le=10, description="Number of relevant chunks to retrieve")  # Reduced max
     system_prompt: Optional[str] = Field(None, max_length=2000, description="Custom system prompt for the LLM")
 
 class SourceChunk(BaseModel):

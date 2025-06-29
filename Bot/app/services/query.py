@@ -1,6 +1,7 @@
 # app/services/query.py
 import os
 import pickle
+import gzip
 import logging
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
@@ -9,6 +10,7 @@ import faiss
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 from dotenv import load_dotenv
+import gc  # For garbage collection
 
 # Load environment variables
 load_dotenv()
@@ -21,15 +23,17 @@ class QueryService:
     
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",
-        chunks_path: str = "data/chunks.pkl",
+        model_name: str = "paraphrase-MiniLM-L3-v2",  # Smaller model
+        chunks_path: str = "data/chunks.pkl.gz",  # Compressed storage
         index_path: str = "data/faiss.index",
-        groq_model: str = "llama3-70b-8192"
+        groq_model: str = "llama3-8b-8192",  # Smaller, faster model
+        enable_compression: bool = True,
     ):
         self.model_name = model_name
         self.chunks_path = Path(chunks_path)
         self.index_path = Path(index_path)
         self.groq_model = groq_model
+        self.enable_compression = enable_compression
         
         # Lazy-loaded components
         self._model = None
@@ -44,6 +48,14 @@ class QueryService:
             logger.info(f"Loading SentenceTransformer model: {self.model_name}")
             self._model = SentenceTransformer(self.model_name)
         return self._model
+
+    def unload_model(self):
+        """Unload model to free memory when not needed."""
+        if self._model is not None:
+            del self._model
+            self._model = None
+            gc.collect()
+            logger.info("Query model unloaded to save memory")
     
     @property
     def chunks(self) -> List[str]:
@@ -71,7 +83,7 @@ class QueryService:
     
     def load_chunks(self, filepath: Optional[str] = None) -> List[str]:
         """
-        Load text chunks from pickle file.
+        Load text chunks from pickle file with compression support.
         
         Args:
             filepath: Optional custom path to chunks file
@@ -88,8 +100,12 @@ class QueryService:
             raise FileNotFoundError(f"Chunks file not found: {chunks_file}")
         
         try:
-            with open(chunks_file, "rb") as f:
-                chunks = pickle.load(f)
+            if self.enable_compression and chunks_file.suffix == '.gz':
+                with gzip.open(chunks_file, "rb") as f:
+                    chunks = pickle.load(f)
+            else:
+                with open(chunks_file, "rb") as f:
+                    chunks = pickle.load(f)
             logger.info(f"Loaded {len(chunks)} chunks from {chunks_file}")
             return chunks
         except Exception as e:
@@ -125,14 +141,14 @@ class QueryService:
     def query_index(
         self, 
         question: str, 
-        top_k: int = 5
+        top_k: int = 3  # Reduced from 5 to save memory
     ) -> List[Tuple[str, float]]:
         """
-        Query the FAISS index for relevant chunks.
+        Query the FAISS index for relevant chunks with memory optimization.
         
         Args:
             question: User question to search for
-            top_k: Number of top results to return
+            top_k: Number of top results to return (reduced for memory efficiency)
             
         Returns:
             List of (chunk_text, distance) tuples sorted by relevance
@@ -152,6 +168,10 @@ class QueryService:
             for idx, distance in zip(indices[0], distances[0]):
                 if idx < len(self.chunks):  # Ensure valid index
                     results.append((self.chunks[idx], float(distance)))
+            
+            # Clean up embeddings from memory
+            del question_embedding, distances, indices
+            gc.collect()
             
             logger.info(f"Found {len(results)} relevant chunks for query")
             return results
