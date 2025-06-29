@@ -142,7 +142,10 @@ class DocumentIngestor:
         return text.strip()
 
     def chunk_text(
-        self, text: str, max_tokens: int = 400, overlap: int = 50  # Increased chunk size, reduced overlap
+        self,
+        text: str,
+        max_tokens: int = 400,
+        overlap: int = 50,  # Increased chunk size, reduced overlap
     ) -> List[str]:
         """
         Split text into overlapping chunks with optimized parameters for deployment.
@@ -179,8 +182,10 @@ class DocumentIngestor:
 
         # Limit total number of chunks for memory efficiency
         if len(chunks) > self.max_chunks:
-            logger.warning(f"Too many chunks ({len(chunks)}), keeping first {self.max_chunks}")
-            chunks = chunks[:self.max_chunks]
+            logger.warning(
+                f"Too many chunks ({len(chunks)}), keeping first {self.max_chunks}"
+            )
+            chunks = chunks[: self.max_chunks]
 
         return chunks
 
@@ -201,33 +206,33 @@ class DocumentIngestor:
             raise ValueError("No chunks provided for index building")
 
         logger.info(f"Encoding {len(chunks)} chunks...")
-        
+
         # Process in smaller batches to reduce memory usage
         batch_size = 50
         all_embeddings = []
-        
+
         for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
+            batch = chunks[i : i + batch_size]
             batch_embeddings = self.model.encode(batch, show_progress_bar=False)
             all_embeddings.append(batch_embeddings)
-            
+
             # Clear some memory
             del batch_embeddings
             gc.collect()
 
         embeddings = np.vstack(all_embeddings)
-        
+
         # Create FAISS index
         dim = embeddings.shape[1]
         index = faiss.IndexFlatL2(dim)
         index.add(embeddings.astype(np.float32))
 
         logger.info(f"Built FAISS index with {index.ntotal} vectors")
-        
+
         # Clean up
         del all_embeddings
         gc.collect()
-        
+
         return index, embeddings
 
     def save_chunks(self, chunks: List[str]) -> bool:
@@ -236,10 +241,12 @@ class DocumentIngestor:
             # Ensure directory exists
             self.chunks_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if self.enable_compression and self.chunks_path.suffix == '.gz':
+            if self.enable_compression and self.chunks_path.suffix == ".gz":
                 with gzip.open(self.chunks_path, "wb") as f:
                     pickle.dump(chunks, f, protocol=pickle.HIGHEST_PROTOCOL)
-                logger.info(f"Saved {len(chunks)} chunks (compressed) to {self.chunks_path}")
+                logger.info(
+                    f"Saved {len(chunks)} chunks (compressed) to {self.chunks_path}"
+                )
             else:
                 with open(self.chunks_path, "wb") as f:
                     pickle.dump(chunks, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -263,7 +270,10 @@ class DocumentIngestor:
 
     @monitor_memory
     def ingest_file(
-        self, filepath: str, max_tokens: int = 400, overlap: int = 50  # Updated defaults
+        self,
+        filepath: str,
+        max_tokens: int = 400,
+        overlap: int = 50,  # Updated defaults
     ) -> Tuple[int, bool]:
         """
         Ingest a single file into the knowledge base with memory optimization.
@@ -301,12 +311,18 @@ class DocumentIngestor:
             # Combine with new chunks but limit total
             all_chunks = existing_chunks + new_chunks
             if len(all_chunks) > self.max_chunks:
-                logger.warning(f"Limiting chunks to {self.max_chunks} (was {len(all_chunks)})")
+                logger.warning(
+                    f"Limiting chunks to {self.max_chunks} (was {len(all_chunks)})"
+                )
                 # Keep the most recent chunks
-                all_chunks = all_chunks[-self.max_chunks:]
+                all_chunks = all_chunks[-self.max_chunks :]
 
             # Build/update index
-            if existing_index is not None and len(existing_chunks) > 0 and len(all_chunks) <= self.max_chunks:
+            if (
+                existing_index is not None
+                and len(existing_chunks) > 0
+                and len(all_chunks) <= self.max_chunks
+            ):
                 # Add new embeddings to existing index
                 logger.info("Updating existing index...")
                 new_embeddings = self.model.encode(new_chunks, show_progress_bar=False)
@@ -342,7 +358,10 @@ class DocumentIngestor:
             return 0, False
 
     def ingest_directory(
-        self, directory_path: str, max_tokens: int = 400, overlap: int = 50  # Updated defaults
+        self,
+        directory_path: str,
+        max_tokens: int = 400,
+        overlap: int = 50,  # Updated defaults
     ) -> Tuple[int, int, bool]:
         """
         Ingest all supported files from a directory with memory optimization.
@@ -380,8 +399,10 @@ class DocumentIngestor:
 
                     # Check if we're approaching memory limits
                     if len(all_chunks) > self.max_chunks:
-                        logger.warning(f"Reached chunk limit ({self.max_chunks}), stopping directory processing")
-                        all_chunks = all_chunks[:self.max_chunks]
+                        logger.warning(
+                            f"Reached chunk limit ({self.max_chunks}), stopping directory processing"
+                        )
+                        all_chunks = all_chunks[: self.max_chunks]
                         break
 
                 except Exception as e:
@@ -419,18 +440,20 @@ class DocumentIngestor:
         """Load existing chunks if available."""
         if self.chunks_path.exists():
             try:
-                if self.enable_compression and self.chunks_path.suffix == '.gz':
+                if self.enable_compression and self.chunks_path.suffix == ".gz":
                     with gzip.open(self.chunks_path, "rb") as f:
                         chunks = pickle.load(f)
                 else:
                     with open(self.chunks_path, "rb") as f:
                         chunks = pickle.load(f)
-                
+
                 # Limit loaded chunks to prevent memory issues
                 if len(chunks) > self.max_chunks:
-                    logger.warning(f"Loading only last {self.max_chunks} chunks from {len(chunks)} total")
-                    chunks = chunks[-self.max_chunks:]
-                
+                    logger.warning(
+                        f"Loading only last {self.max_chunks} chunks from {len(chunks)} total"
+                    )
+                    chunks = chunks[-self.max_chunks :]
+
                 logger.info(f"Loaded {len(chunks)} existing chunks")
                 return chunks
             except Exception as e:

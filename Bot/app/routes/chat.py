@@ -18,16 +18,28 @@ ingest_service = DocumentIngestor(**OptimizationConfig.get_ingestor_config())
 
 router = APIRouter(prefix="/api/v1", tags=["knowledge-base"])
 
+
 # Pydantic models for request/response validation
 class QueryRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=1000, description="The question to ask")
-    top_k: int = Field(default=OptimizationConfig.TOP_K_RESULTS, ge=1, le=10, description="Number of relevant chunks to retrieve")  # Reduced max
-    system_prompt: Optional[str] = Field(None, max_length=2000, description="Custom system prompt for the LLM")
+    question: str = Field(
+        ..., min_length=1, max_length=1000, description="The question to ask"
+    )
+    top_k: int = Field(
+        default=OptimizationConfig.TOP_K_RESULTS,
+        ge=1,
+        le=10,
+        description="Number of relevant chunks to retrieve",
+    )  # Reduced max
+    system_prompt: Optional[str] = Field(
+        None, max_length=2000, description="Custom system prompt for the LLM"
+    )
+
 
 class SourceChunk(BaseModel):
     text: str
     relevance_score: float
     rank: int
+
 
 class QueryResponse(BaseModel):
     question: str
@@ -37,6 +49,7 @@ class QueryResponse(BaseModel):
     success: bool
     error: Optional[str] = None
 
+
 class IngestResponse(BaseModel):
     success: bool
     message: str
@@ -44,27 +57,29 @@ class IngestResponse(BaseModel):
     files_processed: Optional[int] = None
     error: Optional[str] = None
 
+
 class HealthResponse(BaseModel):
     status: str
     details: Dict[str, Any]
+
 
 @router.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
     """
     Query the document knowledge base with a question.
-    
+
     This endpoint searches through ingested documents to find relevant information
     and generates an AI-powered answer based on the context.
     """
     try:
         logger.info(f"Received query: {request.question[:100]}...")
-        
+
         result = query_service.search_and_answer(
             question=request.question,
             top_k=request.top_k,
-            system_prompt=request.system_prompt
+            system_prompt=request.system_prompt,
         )
-        
+
         response = QueryResponse(
             question=result["question"],
             answer=result.get("answer"),
@@ -72,40 +87,45 @@ async def query_documents(request: QueryRequest):
                 SourceChunk(
                     text=source["text"],
                     relevance_score=source["relevance_score"],
-                    rank=source["rank"]
+                    rank=source["rank"],
                 )
                 for source in result.get("sources", [])
             ],
             metadata=result.get("metadata", {}),
             success=result["success"],
-            error=result.get("error")
+            error=result.get("error"),
         )
-        
+
         if not response.success:
             logger.error(f"Query failed: {response.error}")
             raise HTTPException(status_code=500, detail=response.error)
-        
-        logger.info(f"Query processed successfully, returned {len(response.sources)} sources")
+
+        logger.info(
+            f"Query processed successfully, returned {len(response.sources)} sources"
+        )
         return response
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in query endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
 @router.post("/query/simple")
 async def simple_query(request: Request):
     try:
         data = await request.json()
         question = data.get("question")
-        
+
         if not question:
             raise HTTPException(status_code=400, detail="Question is required")
-        
+
         if not isinstance(question, str) or len(question.strip()) == 0:
-            raise HTTPException(status_code=400, detail="Question must be a non-empty string")
-        
+            raise HTTPException(
+                status_code=400, detail="Question must be a non-empty string"
+            )
+
         # Use the query service
         result = query_service.search_and_answer(question=question.strip())
         if result["success"]:
@@ -113,54 +133,57 @@ async def simple_query(request: Request):
                 "success": True,
                 "answer": result["answer"],
                 "sources": [source["text"] for source in result["sources"]],
-                "relevance_scores": [source["relevance_score"] for source in result["sources"]]
+                "relevance_scores": [
+                    source["relevance_score"] for source in result["sources"]
+                ],
             }
         else:
-            raise HTTPException(status_code=500, detail=result.get("error", "Query failed"))
-            
+            raise HTTPException(
+                status_code=500, detail=result.get("error", "Query failed")
+            )
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in simple query endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+
 @router.post("/ingest/file", response_model=IngestResponse)
 async def ingest_file(
     file: UploadFile = File(...),
     max_tokens: int = Form(default=200, ge=50, le=1000),
-    overlap: int = Form(default=20, ge=0, le=100)
+    overlap: int = Form(default=20, ge=0, le=100),
 ):
     """
     Ingest a single document file into the knowledge base.
-    
+
     Supported file types: .txt, .pdf, .docx
     """
     try:
         # Validate file type
         if not file.filename:
             raise HTTPException(status_code=400, detail="No filename provided")
-        
-        file_ext = file.filename.split('.')[-1].lower()
-        if file_ext not in ['txt', 'pdf', 'docx']:
+
+        file_ext = file.filename.split(".")[-1].lower()
+        if file_ext not in ["txt", "pdf", "docx"]:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file type: {file_ext}. Supported types: txt, pdf, docx"
+                status_code=400,
+                detail=f"Unsupported file type: {file_ext}. Supported types: txt, pdf, docx",
             )
-        
+
         # Save uploaded file temporarily
         temp_path = f"temp_{file.filename}"
         try:
             content = await file.read()
             with open(temp_path, "wb") as f:
                 f.write(content)
-            
+
             # Ingest the file
             chunks_created, success = ingest_service.ingest_file(
-                filepath=temp_path,
-                max_tokens=max_tokens,
-                overlap=overlap
+                filepath=temp_path, max_tokens=max_tokens, overlap=overlap
             )
-            
+
             if success:
                 message = f"Successfully ingested {chunks_created} chunks from {file.filename}"
                 logger.info(message)
@@ -168,7 +191,7 @@ async def ingest_file(
                     success=True,
                     message=message,
                     chunks_created=chunks_created,
-                    files_processed=1
+                    files_processed=1,
                 )
             else:
                 raise HTTPException(status_code=500, detail="Failed to ingest file")

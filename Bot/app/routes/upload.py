@@ -11,6 +11,7 @@ router = APIRouter()
 # Initialize ingestor with optimized configuration
 ingest_service = DocumentIngestor(**OptimizationConfig.get_ingestor_config())
 
+
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     """
@@ -19,27 +20,26 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         # Save the uploaded file
         file_path = await save_file(file)
-        
+
         # Get optimized chunking parameters
         chunk_params = OptimizationConfig.get_chunking_params()
-        
+
         # Ingest the file with optimized settings
         chunks_created, success = ingest_service.ingest_file(
-            file_path, 
+            file_path,
             max_tokens=chunk_params["max_tokens"],
-            overlap=chunk_params["overlap"]
+            overlap=chunk_params["overlap"],
         )
-        
+
         if success:
             return {
-                "message": "File uploaded and ingested successfully", 
+                "message": "File uploaded and ingested successfully",
                 "file_path": file_path,
-                "chunks_created": chunks_created
+                "chunks_created": chunks_created,
             }
         else:
             raise HTTPException(status_code=500, detail="Failed to ingest file")
-            
+
     except Exception as e:
         logger.error(f"Upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
