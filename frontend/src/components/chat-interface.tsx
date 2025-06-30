@@ -125,14 +125,14 @@ export function ChatInterface() {
     setStreamingMessage("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [userMessage],
-          documentIds: [],
+          question: input,
+          top_k: 3,
         }),
       });
 
@@ -140,48 +140,19 @@ export function ChatInterface() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      if (!response.body) {
-        throw new Error("No response body");
-      }
+      // Handle JSON response from /api/v1/query endpoint
+      const result = await response.json();
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = "";
+      if (result.success && result.answer) {
+        const assistantMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: result.answer,
+        };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.replace("data: ", "");
-            if (data === "[DONE]") {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: "assistant",
-                  content: assistantMessage,
-                },
-              ]);
-              setStreamingMessage("");
-              setIsLoading(false);
-              return;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices[0].delta.content || "";
-              assistantMessage += content;
-              setStreamingMessage(assistantMessage);
-            } catch (e) {
-              console.error("Error parsing chunk:", e);
-            }
-          }
-        }
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        throw new Error(result.error || "Failed to get response from API");
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -196,7 +167,9 @@ export function ChatInterface() {
               : "Please upload documents first to get context-aware responses.",
         },
       ]);
+    } finally {
       setIsLoading(false);
+      setStreamingMessage("");
     }
   };
 

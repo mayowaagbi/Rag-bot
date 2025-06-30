@@ -1,5 +1,5 @@
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
 interface VisuallyHiddenProps extends React.HTMLAttributes<HTMLSpanElement> {}
 
@@ -14,9 +14,9 @@ const VisuallyHidden = React.forwardRef<HTMLSpanElement, VisuallyHiddenProps>(
         )}
         {...props}
       />
-    )
+    );
   }
-)
-VisuallyHidden.displayName = "VisuallyHidden"
+);
+VisuallyHidden.displayName = "VisuallyHidden";
 
-export { VisuallyHidden }
+export { VisuallyHidden };
